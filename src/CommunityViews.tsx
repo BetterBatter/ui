@@ -1711,58 +1711,117 @@ export function ProfilePage({ points, displayedAchievementIds, onDisplayedAchiev
   )
 }
 
-export function AdminPage() {
+export type AdminSection = 'overview' | 'reports' | 'users' | 'operations'
+
+export function AdminPage({ section = 'overview' }: { section?: AdminSection }) {
   const [reportState, setReportState] = useState<Record<number, string>>({})
+  const [reportFilter, setReportFilter] = useState<'all' | 'user' | 'automatic'>('all')
+  const [userQuery, setUserQuery] = useState('')
+  const [feedback, setFeedback] = useState('')
   const reports = [
     { id:1, reason:'욕설 및 선수 비하', target:'댓글 · “그런 실력으로…”', reporter:'3명 신고', user:'FastBat92', received:'2분 전' },
     { id:2, reason:'도배 및 경기방해', target:'게시글 4건 연속 등록', reporter:'자동 감지', user:'HomeRunBot', received:'8분 전' },
     { id:3, reason:'허위 경기 정보', target:'경기 취소 관련 확인되지 않은 정보', reporter:'7명 신고', user:'MLB_inside', received:'13분 전' },
+  ]
+  const users = [
+    { name:'FastBat92', team:'NYY', joined:'2026.04.18', reports:3, status:'주의', activity:'댓글 184 · 게시글 12' },
+    { name:'HomeRunBot', team:'BOS', joined:'2026.08.02', reports:8, status:'검토 중', activity:'댓글 421 · 게시글 39' },
+    { name:'MLB_inside', team:'LAD', joined:'2025.11.09', reports:7, status:'정상', activity:'댓글 96 · 게시글 24' },
+    { name:'BlueCurve', team:'SF', joined:'2025.06.21', reports:0, status:'정상', activity:'댓글 328 · 게시글 51' },
   ]
   const sanctions = [
     { time:'21:31', user:'HomeRunBot', reason:'도배 및 자동화 활동', action:'7일 이용 정지', operator:'admin_02' },
     { time:'20:48', user:'PitchTalker', reason:'욕설 및 비하', action:'댓글 삭제 · 경고', operator:'admin_01' },
     { time:'19:12', user:'TicketSeller', reason:'외부 거래 유도', action:'영구 정지', operator:'admin_02' },
   ]
+  const sectionMeta: Record<AdminSection, { eyebrow: string; title: string; description: string }> = {
+    overview: { eyebrow:'OPERATIONS OVERVIEW', title:'오늘의 운영 현황', description:'지금 확인해야 할 신고, 경기 데이터와 서비스 상태를 한곳에서 봅니다.' },
+    reports: { eyebrow:'MODERATION QUEUE', title:'신고 관리', description:'사용자 신고와 자동 감지 항목을 검토하고 조치 대기 상태를 관리합니다.' },
+    users: { eyebrow:'MEMBER DIRECTORY', title:'사용자 관리', description:'계정 상태와 신고 이력을 확인하고 필요한 운영 검토를 시작합니다.' },
+    operations: { eyebrow:'SERVICE OPERATIONS', title:'서비스 운영', description:'데이터 피드, 공지 노출과 최근 운영 조치 기록을 확인합니다.' },
+  }
+  const currentMeta = sectionMeta[section]
+  const visibleReports = reports.filter((report) => reportFilter === 'all' || (reportFilter === 'automatic' ? report.reporter === '자동 감지' : report.reporter !== '자동 감지'))
+  const visibleUsers = users.filter((user) => `${user.name} ${user.team}`.toLowerCase().includes(userQuery.trim().toLowerCase()))
+
+  const reportQueue = (showToolbar = false) => <section className="admin-panel admin-report-queue" aria-labelledby="report-queue-title">
+    <header>
+      <div><span>REVIEW QUEUE</span><h2 id="report-queue-title">신고 검토</h2></div>
+      <b>{reports.filter((report) => !reportState[report.id]).length}건 대기</b>
+    </header>
+    {showToolbar && <div className="admin-section-toolbar">
+      <div className="admin-filter-group" role="group" aria-label="신고 출처 필터">
+        {([['all','전체'],['user','사용자 신고'],['automatic','자동 감지']] as const).map(([value,label]) => <button type="button" className={reportFilter === value ? 'active' : ''} aria-pressed={reportFilter === value} onClick={() => setReportFilter(value)} key={value}>{label}</button>)}
+      </div>
+      <span>오래된 신고부터 우선 검토</span>
+    </div>}
+    <div className="admin-report-list">
+      {visibleReports.map((report) => {
+        const result = reportState[report.id]
+        return <article className={`admin-report-item ${result ? 'resolved' : ''}`} key={report.id}>
+          <span className="admin-report-marker" aria-hidden="true"><Flag size={14} /></span>
+          <div className="admin-report-copy"><header><strong>{report.reason}</strong><em>{report.reporter}</em><time>{report.received}</time></header><p>{report.target}</p><small>대상 · <b>{report.user}</b></small></div>
+          {result
+            ? <output className={`admin-report-result ${result.includes('제재') ? 'sanctioned' : ''}`} aria-live="polite"><Check size={13} />{result}</output>
+            : <div className="admin-report-actions"><button type="button" onClick={() => setReportState((current) => ({...current,[report.id]:'기각 완료'}))}>기각</button><button type="button" onClick={() => setReportState((current) => ({...current,[report.id]:'제재 검토 중'}))}><ShieldCheck size={13} />제재 검토</button></div>}
+        </article>
+      })}
+    </div>
+  </section>
+
+  const serviceHealth = <details className="admin-panel admin-health-card" open>
+    <summary><div><span>SERVICE</span><h2>서비스 상태</h2></div><b><i aria-hidden="true" />1건 지연</b><ChevronDown size={15} /></summary>
+    <ul><li><span className="good" />인증 서비스<b>정상</b></li><li><span className="warning" />LAD vs SF 피드<b>18초 지연</b></li><li><span className="good" />커뮤니티 API<b>정상</b></li><li><span className="good" />알림 큐<b>정상</b></li></ul>
+  </details>
+
+  const pinnedNotice = <section className="admin-panel admin-pin-card"><header><div><span>PINNED</span><h2>상단 고정 공지</h2></div><b>노출 중</b></header><div><Megaphone size={16} aria-hidden="true" /><h3>커뮤니티 운영 정책 및 경기 중계 예절 안내</h3><p>전체 페이지 · 08.24 09:00부터</p></div><button type="button" onClick={() => setFeedback('공지 관리 화면은 API 연결 시 편집 패널로 열립니다.')}>공지 관리<ChevronRight size={14} /></button></section>
+
+  const auditLog = <section className="admin-panel admin-audit-log" aria-labelledby="audit-log-title">
+    <header><div><span>AUDIT LOG</span><h2 id="audit-log-title">최근 운영 조치</h2></div><button type="button" onClick={() => setFeedback('최근 운영 조치 기록을 내보낼 준비가 되었습니다.')}>기록 내보내기<ArrowUpRight size={13} /></button></header>
+    <div className="admin-audit-list" role="list">
+      {sanctions.map((row) => <article role="listitem" key={`${row.time}-${row.user}`}><time>{row.time}</time><div className="admin-audit-subject"><strong>{row.user}</strong><span>{row.reason}</span></div><div className="admin-audit-outcome"><b>{row.action}</b><small>{row.operator}</small></div></article>)}
+    </div>
+  </section>
+
   return (
     <section className="portal-page admin-page" aria-labelledby="admin-title">
-      <section className="admin-command-strip" aria-label="운영 현황 요약">
-        <article className="admin-command-item urgent"><span className="admin-command-icon" aria-hidden="true"><Flag size={16} /></span><div><small>처리 대기</small><strong>신고 12건</strong><em>오늘 4건 접수</em></div></article>
-        <article className="admin-command-item delayed"><span className="admin-command-icon" aria-hidden="true"><CircleAlert size={16} /></span><div><small>데이터 피드</small><strong>18초 지연</strong><em>LAD vs SF</em></div></article>
-        <dl className="admin-command-facts"><div><dt>현재 접속</dt><dd>8,241</dd></div><div><dt>오늘 게시글</dt><dd>386</dd></div></dl>
-      </section>
+      <header className="admin-page-heading">
+        <div><span>{currentMeta.eyebrow}</span><h1 id="admin-title">{currentMeta.title}</h1><p>{currentMeta.description}</p></div>
+        <time dateTime="2026-08-26T14:32:00+09:00">08.26 14:32 기준</time>
+      </header>
 
-      <div className="admin-workspace">
-        <section className="admin-panel admin-report-queue" aria-labelledby="report-queue-title">
-          <header><div><span>REVIEW QUEUE</span><h2 id="report-queue-title">신고 검토</h2></div><b>12건 대기</b></header>
-          <div className="admin-report-list">
-            {reports.map((report) => {
-              const result = reportState[report.id]
-              return <article className={`admin-report-item ${result ? 'resolved' : ''}`} key={report.id}>
-                <span className="admin-report-marker" aria-hidden="true"><Flag size={14} /></span>
-                <div className="admin-report-copy"><header><strong>{report.reason}</strong><em>{report.reporter}</em><time>{report.received}</time></header><p>{report.target}</p><small>대상 · <b>{report.user}</b></small></div>
-                {result
-                  ? <output className={`admin-report-result ${result.includes('제재') ? 'sanctioned' : ''}`} aria-live="polite"><Check size={13} />{result}</output>
-                  : <div className="admin-report-actions"><button type="button" onClick={() => setReportState((current) => ({...current,[report.id]:'기각 완료'}))}>기각</button><button type="button" onClick={() => setReportState((current) => ({...current,[report.id]:'제재 완료'}))}><ShieldCheck size={13} />제재</button></div>}
-              </article>
-            })}
-          </div>
+      {section === 'overview' && <>
+        <section className="admin-command-strip" aria-label="운영 현황 요약">
+          <article className="admin-command-item urgent"><span className="admin-command-icon" aria-hidden="true"><Flag size={16} /></span><div><small>처리 대기</small><strong>신고 12건</strong><em>오늘 4건 접수</em></div></article>
+          <article className="admin-command-item delayed"><span className="admin-command-icon" aria-hidden="true"><CircleAlert size={16} /></span><div><small>데이터 피드</small><strong>18초 지연</strong><em>LAD vs SF</em></div></article>
+          <dl className="admin-command-facts"><div><dt>현재 접속</dt><dd>8,241</dd></div><div><dt>오늘 게시글</dt><dd>386</dd></div></dl>
         </section>
+        <div className="admin-workspace">{reportQueue()}<aside className="admin-control-rail" aria-label="운영 도구">{serviceHealth}{pinnedNotice}</aside></div>
+        {auditLog}
+      </>}
 
-        <aside className="admin-control-rail" aria-label="운영 도구">
-          <details className="admin-panel admin-health-card" open>
-            <summary><div><span>SERVICE</span><h2>서비스 상태</h2></div><b><i aria-hidden="true" />1건 지연</b><ChevronDown size={15} /></summary>
-            <ul><li><span className="good" />인증 서비스<b>정상</b></li><li><span className="warning" />LAD vs SF 피드<b>18초 지연</b></li><li><span className="good" />커뮤니티 API<b>정상</b></li><li><span className="good" />알림 큐<b>정상</b></li></ul>
-          </details>
-          <section className="admin-panel admin-pin-card"><header><div><span>PINNED</span><h2>상단 고정 공지</h2></div><b>노출 중</b></header><div><Megaphone size={16} aria-hidden="true" /><h3>커뮤니티 운영 정책 및 경기 중계 예절 안내</h3><p>전체 페이지 · 08.24 09:00부터</p></div><button type="button">공지 관리<ChevronRight size={14} /></button></section>
-        </aside>
-      </div>
+      {section === 'reports' && reportQueue(true)}
 
-      <section className="admin-panel admin-audit-log" aria-labelledby="audit-log-title">
-        <header><div><span>AUDIT LOG</span><h2 id="audit-log-title">최근 운영 조치</h2></div><button type="button">기록 내보내기<ArrowUpRight size={13} /></button></header>
-        <div className="admin-audit-list" role="list">
-          {sanctions.map((row) => <article role="listitem" key={`${row.time}-${row.user}`}><time>{row.time}</time><div className="admin-audit-subject"><strong>{row.user}</strong><span>{row.reason}</span></div><div className="admin-audit-outcome"><b>{row.action}</b><small>{row.operator}</small></div></article>)}
+      {section === 'users' && <section className="admin-panel admin-user-directory" aria-labelledby="admin-user-title">
+        <header><div><span>MEMBERS</span><h2 id="admin-user-title">사용자 목록</h2></div><label className="admin-user-search"><Search size={15} aria-hidden="true" /><span className="visually-hidden">닉네임 또는 구단 검색</span><input value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="닉네임 또는 구단 검색" /></label></header>
+        <div className="admin-user-table" role="table" aria-label="사용자 계정 목록">
+          <div className="admin-user-table-head" role="row"><span role="columnheader">사용자</span><span role="columnheader">활동</span><span role="columnheader">신고</span><span role="columnheader">상태</span><span role="columnheader">관리</span></div>
+          {visibleUsers.map((user) => <div className="admin-user-row" role="row" key={user.name}>
+            <span className="admin-user-name" role="cell"><UserAvatar size="small" /><span><strong>{user.name}</strong><small>{user.team} · {user.joined} 가입</small></span></span>
+            <span role="cell">{user.activity}</span><b role="cell">{user.reports}건</b><em className={`admin-user-status ${user.status === '정상' ? 'good' : 'attention'}`} role="cell">{user.status}</em>
+            <span className="admin-user-actions" role="cell"><button type="button" onClick={() => setFeedback(`${user.name} 계정 상세를 확인합니다.`)}>상세</button><button type="button" onClick={() => setFeedback(`${user.name} 계정의 이용 제한 검토를 시작했습니다.`)}><Ban size={13} />제한 검토</button></span>
+          </div>)}
+          {visibleUsers.length === 0 && <p className="admin-empty">검색 조건과 일치하는 사용자가 없습니다.</p>}
         </div>
-      </section>
+      </section>}
+
+      {section === 'operations' && <>
+        <section className="admin-data-delay" aria-label="데이터 지연 안내"><CircleAlert size={17} aria-hidden="true" /><div><strong>LAD vs SF 경기 데이터가 18초 지연되고 있습니다.</strong><p>예측 마감 시간은 공식 피드 도착 시각을 기준으로 자동 보정됩니다.</p></div><button type="button" onClick={() => setFeedback('데이터 피드 상세 상태를 확인합니다.')}>상세 상태</button></section>
+        <div className="admin-operations-grid">{serviceHealth}{pinnedNotice}</div>
+        {auditLog}
+      </>}
+
+      <output className={`admin-feedback ${feedback ? 'show' : ''}`} aria-live="polite">{feedback && <><Check size={14} />{feedback}</>}</output>
     </section>
   )
 }

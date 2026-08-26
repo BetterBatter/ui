@@ -46,6 +46,7 @@ import { DEFAULT_PROFILE_IMAGE, UserAvatar } from './UserAvatar'
 import { LiveGameSelector, type LiveGameOption } from './LiveGameSelector'
 import { PredictionHistoryContent, type PredictionHistoryItem } from './PredictionHistory'
 import { teamAccentStyle, teamBadgeStyle } from './teamBrand'
+import { AdminGuard, AdminLayout } from './AdminLayout'
 
 type Side = 'yes' | 'no'
 type MarketStatus = 'open' | 'closing' | 'settled'
@@ -872,6 +873,9 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('all')
   const [authenticated, setAuthenticated] = useState(true)
+  // The mock keeps an explicit role boundary so the route structure matches the
+  // production contract, where this value comes from the authenticated session.
+  const [currentUserRole] = useState<'admin' | 'member'>('admin')
   const [authMode, setAuthMode] = useState<'login' | 'signup' | null>(null)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -918,7 +922,7 @@ function App() {
           ? '랭킹'
           : location.pathname === '/predictions'
             ? '내 예측'
-            : location.pathname === '/admin'
+            : location.pathname.startsWith('/admin')
               ? '운영 관리'
               : location.pathname === '/about'
                 ? 'BetterBatter 소개'
@@ -1038,6 +1042,22 @@ function App() {
     window.localStorage.setItem('better-batter-vote-motion', String(enabled))
     setNotice(enabled ? '투표 경쟁 애니메이션을 켰습니다.' : '투표 경쟁 애니메이션을 껐습니다.')
     window.setTimeout(() => setNotice(''), 2200)
+  }
+
+  if (location.pathname.startsWith('/admin')) {
+    return (
+      <AdminGuard authenticated={authenticated} authorized={currentUserRole === 'admin'}>
+        <Routes>
+          <Route path="/admin" element={<AdminLayout onExit={() => navigate('/live')} onLogout={() => { setAuthenticated(false); navigate('/live') }} />}>
+            <Route index element={<AdminPage section="overview" />} />
+            <Route path="reports" element={<AdminPage section="reports" />} />
+            <Route path="users" element={<AdminPage section="users" />} />
+            <Route path="operations" element={<AdminPage section="operations" />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Route>
+        </Routes>
+      </AdminGuard>
+    )
   }
 
   return (
@@ -1390,7 +1410,6 @@ function App() {
           <Route path="/mypage/*" element={authenticated
             ? <ProfilePage points={points} favoriteTeamCode={favoriteTeamCode} onFavoriteTeamChange={selectFavoriteTeam} displayedAchievementIds={displayedAchievementIds} onDisplayedAchievementIdsChange={setDisplayedAchievementIds} voteMotionEnabled={voteMotionEnabled} onVoteMotionEnabledChange={updateVoteMotionPreference} onAdmin={() => navigate('/admin')} tab={profileTab} onTabChange={(tab) => navigate(PROFILE_TAB_PATHS[tab])} />
             : <Navigate to="/live" replace />} />
-          <Route path="/admin" element={authenticated ? <AdminPage /> : <Navigate to="/live" replace />} />
           <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>
       </main>
